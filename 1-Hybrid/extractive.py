@@ -9,8 +9,37 @@ from sklearn.metrics.pairwise import cosine_similarity
 import fasttext
 import fasttext.util
 import pandas as pd
+from transformers import AutoConfig, AutoTokenizer, AutoModelForTokenClassification, pipeline
+from tqdm import tqdm
 import pdb
 fasttext.util.download_model('hi', if_exists='ignore')
+
+MAX_LENGTH = 7
+
+def length_weight(sentence):
+    # Assign a weight based on sentence length
+    return min(len(sentence.split()), MAX_LENGTH) / MAX_LENGTH
+
+def positional_weight(index, total_sentences):
+    # Higher weight for the first and last sentences
+    if index == 0 or index == total_sentences - 1:
+        return 1.0
+    return 0.5
+
+def ner_weight(sentences, ner_pipeline):
+    batched_results = []
+    for i in range(0, len(sentences), 32):
+        batch = sentences[i:i+32]
+        batch_results = ner_pipeline(batch)
+        batched_results.extend(batch_results)
+
+    res = []
+    for i in range(0, len(sentences)):
+        res.append(len(batched_results[i])/len(sentences[i].split()))
+
+    return res
+    # res = ner_pipeline(sentence)
+    # return len(res)/len(sentence.split())
 
 # Function for text preprocessing
 def preprocess_text(text):
@@ -54,10 +83,26 @@ def build_similarity_matrix(sentences):
     # pdb.set_trace()print
     return similarity_matrix
 
+def modify_sim_matrix(sentences, similarity_matrix):
+    ner_pipeline = ner_init()
+
+    ner_ws = ner_weight(sentences, ner_pipeline)
+
+    for idx in range(len(sentences)):
+        ner_w = ner_ws[idx]
+        len_w = length_weight(sentences[idx])
+        pos_w = positional_weight(sentences[idx], len(sentences))
+        tot_w = (len_w+ner_w+pos_w)/3
+
+        similarity_matrix[idx] *= tot_w
+
+    return similarity_matrix
+
 # Function to generate summary using TextRank
-def generate_summary(text, top_n=5):
+def generate_summary(text, top_n=3):
     sentences, orig_sentences = preprocess_text(text)
     similarity_matrix = build_similarity_matrix(sentences)
+    similarity_matrix = modify_sim_matrix(sentences, similarity_matrix)
     nx_graph = nx.from_numpy_array(similarity_matrix)
     scores = nx.pagerank(nx_graph)
     try:
@@ -88,20 +133,43 @@ with open('stopwords-hi.txt', 'r', encoding='utf-8') as file:
 model_path = 'cc.hi.300.bin'
 fasttext_model = fasttext.load_model(model_path)
 
+def ner_init():
+    hiner_model_name = "cfilt/HiNER-original-muril-base-cased"
+    hiner_config = AutoConfig.from_pretrained(hiner_model_name)
+    if hiner_config.model_type in {"bloom", "gpt2", "roberta"}:
+        hiner_tokenizer = AutoTokenizer.from_pretrained(
+            hiner_model_name,
+            add_prefix_space=True,
+        )
+    else:
+        hiner_tokenizer = AutoTokenizer.from_pretrained(
+            hiner_model_name,
+            padding=False,
+            truncation=True,
+            model_max_length = 512,
+        )
+    hiner_model = AutoModelForTokenClassification.from_pretrained(
+        hiner_model_name,
+        config=hiner_config,
+    )
+    ner_model_first = pipeline("ner", model=hiner_model, tokenizer=hiner_tokenizer, aggregation_strategy = "first", device=0)
+
+    return ner_model_first
+
 # hindi_text = "1. वेनेज़ुएला: 1 रुपए 36 पैसे 2. सऊदी अरब: 15 रुपए 59 पैसे 3. ईरान: 21 रुपए 68 पैसे 4. अमरीकाः 39 रुपए 40 पैसे समाप्त 5. पाकिस्तान: 49 रुपए 47 पैसे 6. भारतः 59 रुपए 99 पैसे (दिल्ली) 65 रुपए 59 पैसे (लखनऊ) 7. नेपाल: 58 रुपए 95 पैसे 8. श्रीलंका: 60 रुपए 31 पैसे 9. चीनः 60 रुपए 99 पैसे 10. बांग्लादेश: 80 रुपए 64 पैसे 11. ब्रिटेनः 98 रुपए 26 पैसे 12. हांगकांग: 121 रुपए 97 पैसे (एक डॉलर: 67.76 रुपए) (सौजन्य: www.globalpetrolprice.com) (बीबीसी हिंदी के एंड्रॉएड ऐप के लिए आप यहां क्लिक कर सकते हैं. आप हमें फ़ेसबुक और ट्विटर पर फ़ॉलो भी कर सकते हैं.)"
 # summary = generate_summary(hindi_text)
 print(len(df['Article']))
-for i, article in enumerate(df['Article']):
-    if i%100 == 0:
-        print(i)
-    try:
-        summary = generate_summary(article)
-    except:
-        print(i)
-        pdb.set_trace()
+for i, article in tqdm(enumerate(df['Article'])):
+    # if i%100 == 0:
+    #     print(i)
+    # try:
+    summary = generate_summary(article)
+    # except:
+    #     print(i)
+    #     pdb.set_trace()
     summaries.append(summary)
 
 dict = {'summary_gen': summaries}
 df2 = pd.DataFrame(dict)
 
-df2.to_csv("extr_summ.csv", index=False)
+df2.to_csv("extr_summ3.csv", index=False)
