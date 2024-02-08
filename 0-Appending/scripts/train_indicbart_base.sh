@@ -1,4 +1,4 @@
-# HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 python ../run_summarization.py \
     --model_name_or_path ai4bharat/IndicBART \
     --lang hi_IN \
@@ -8,13 +8,12 @@ python ../run_summarization.py \
     --output_dir model/indicbart-hin-base/output \
     --cache_dir model/indicbart-hin-base/cache/ \
     --do_train \
-    --num_train_epochs 1 \
-    --train_file ../../Datasets/Hindi_summarization/XLSum/clean_hindi_train.csv \
-    --max_train_samples 4 \
+    --num_train_epochs 10 \
+    --train_file ../../Datasets/Hindi_summarization/Long-short-news-dataset/clean_hindi_train.csv \
+    --use_lineterminator True\
     --per_device_train_batch_size 4 \
     --do_eval \
-    --validation_file ../../Datasets/Hindi_summarization/XLSum/hindi_val.csv \
-    --max_eval_samples 4 \
+    --validation_file ../../Datasets/Hindi_summarization/Long-short-news-dataset/clean_hindi_val.csv \
     --evaluation_strategy "epoch" \
     --per_device_eval_batch_size 4 \
     --num_beams 4 \
@@ -25,7 +24,10 @@ python ../run_summarization.py \
     --seed 42 \
     --use_fast_tokenizer False \
     --summary_column summary \
-    --text_column text $@
+    --text_column article $@
+    # --max_train_samples 4 \
+    # --max_eval_samples 4 \
     # --resume_from_checkpoint model/indicbartss-hin/ \
     # --do_train \
     # --overwrite_output_dir \
+

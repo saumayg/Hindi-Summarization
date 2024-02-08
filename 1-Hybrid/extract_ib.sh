@@ -1,4 +1,4 @@
-HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+# HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
 python extractive_gae.py \
     --pt_name ai4bharat/IndicBART \
     --train_dataset ../Datasets/Hindi_summarization/XLSum/clean_hindi_train.csv  \

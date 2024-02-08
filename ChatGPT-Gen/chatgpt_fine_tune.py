@@ -2,12 +2,12 @@ from openai import OpenAI
 client = OpenAI(api_key="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")
 
 client.files.create(
-    file=open("../Datasets/Hindi_summarization/XLSum/ChatGPT/chatgpt_train_hindi_4.jsonl", "rb"),
+    file=open("../Datasets/Hindi_summarization/XLSum/ChatGPT/chatgpt_train_hindi_9.jsonl", "rb"),
     purpose="fine-tune"
 )
 
 client.files.create(
-    file=open("../Datasets/Hindi_summarization/XLSum/ChatGPT/chatgpt_test_hindi_4.jsonl", "rb"),
+    file=open("../Datasets/Hindi_summarization/XLSum/ChatGPT/chatgpt_test_hindi_9.jsonl", "rb"),
     purpose="fine-tune"
 )
 

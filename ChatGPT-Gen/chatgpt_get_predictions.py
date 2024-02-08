@@ -76,7 +76,7 @@ def num_tokens_from_messages(messages, model="gpt-3.5-turbo-16k-0613"):
 # print(df['text'][0])
 
 for idx in tqdm(df.index):
-    model_name = "ft:gpt-3.5-turbo-1106:personal::8mjIpStf"
+    model_name = "ft:gpt-3.5-turbo-1106:personal::8owZHC2k"
     text = df['text'][idx]
     # mod_text = f"'{text}' " + prompt
     mod_text = text
@@ -126,7 +126,7 @@ for idx in tqdm(df.index):
     dict["gen_summ"].append(response.choices[0].message.content)
 
 gen_df = pd.DataFrame(dict)
-gen_df.to_csv("chatgpt_fine_tune_val_4.csv", index=False)
+gen_df.to_csv("chatgpt_fine_tune_val_10.csv", index=False)
 
 # response = client.chat.completions.create(
 #   model="gpt-3.5-turbo-1106",

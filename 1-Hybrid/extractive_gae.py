@@ -19,6 +19,7 @@ from scipy import spatial
 from torch_geometric.nn import GAE, GCNConv
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import SpectralClustering
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 
@@ -50,7 +51,7 @@ pretrained_config = AutoConfig.from_pretrained(
     )
 pretrained_tokenizer = AutoTokenizer.from_pretrained(
     args.pt_name,
-    cache_dir = args.cache_dir
+    cache_dir = args.cache_dir,
     )
 
 # Document class
@@ -153,7 +154,7 @@ class RNN_model(torch.nn.Module):
 class Summary_model(torch.nn.Module):
     def __init__(self, dim, h1):
         super(Summary_model, self).__init__()
-        self.linear1 = torch.nn.utils.parametrizations.weight_norm(torch.nn.Linear(dim, h1), name='weight')
+        self.linear1 = torch.nn.utils.weight_norm(torch.nn.Linear(dim, h1), name='weight')
 
     def append_cluster_embeds(self, labels, sent_gae_embeds, cluster_embeds):
         size_clu_emb = 128
@@ -246,31 +247,45 @@ def get_wx_sentence(wx_sent):
 
 # Convert into tokens, drop sentences having lots of punctuations
 # Convert sentence into model input, pass through model, get model output as the embeddings
-def pretrained_sentence_embedding(orig_sent, pt_model, pt_tokenizer):
+def pretrained_sentence_embedding(orig_sents, pt_model, pt_tokenizer):
     # wx_sent = get_wx_sentence(sentence)
-    tokens = pt_tokenizer.tokenize(orig_sent)
-    count = 0
-    for each_word in tokens:
-        if (each_word=='.' or each_word=='-' or each_word=='\\' or each_word=='_' or each_word==',' or each_word=="'" or each_word=='[' or each_word==']' or each_word=='(' or each_word==')' or each_word=='*' or each_word==';' or each_word=='|'  or each_word==':'  or each_word=='-'or each_word=='?'or each_word=='!' or each_word=="\/"):
-            count += 1
-        if (each_word=='▁.' or each_word=='▁-' or each_word=='▁\\' or each_word=='▁_' or each_word=='▁,' or each_word=="▁'" or each_word=='▁[' or each_word=='▁]' or each_word=='▁(' or each_word=='▁)' or each_word=='▁*' or each_word=='▁;' or each_word=='▁|'  or each_word=='▁:'  or each_word=='▁-'or each_word=='▁?'or each_word=='▁!' or each_word=="▁\/"):
-            count += 1
-    if (count >= (len(tokens)/2)):
-        return np.zeros((args.emb_dim))
+    tokens_list = [pt_tokenizer.tokenize(sent) for sent in orig_sents]
+    special_chars = {'.', '-', '\\', '_', ',', "'", '[', ']', '(', ')', '*', ';', '|', ':', '?', '!', '\/', '▁.' , '▁-', '▁\\', '▁_', '▁,', "▁'", '▁[', '▁]', '▁(', '▁)', '▁*', '▁;', '▁|', '▁:', '▁?', '▁!', "▁\/"}
     
-    emb_sent = pt_tokenizer.encode(orig_sent)
-    emb_sent = torch.tensor(emb_sent).unsqueeze(0)
+    sentences_to_process = []
+    sentences_to_exclude_indices = []
+    for i, tokens in enumerate(tokens_list):
+        count = sum(1 for each_word in tokens if each_word in special_chars)
+        if (count < (len(tokens)/2)):
+            sentences_to_process.append(orig_sents[i])
+        else:
+            sentences_to_exclude_indices.append(i)
+    
+    encoded_inputs = pt_tokenizer(sentences_to_process, max_length=args.emb_dim, padding=True, truncation=True, return_tensors="pt")
+    model_input = {key: val for key, val in encoded_inputs.items() if key in ['input_ids', 'attention_mask']}
+    # emb_sent = pt_tokenizer.encode(orig_sent)
+    # pdb.set_trace()
+    # emb_sent = torch.tensor(emb_sent).unsqueeze(0)
     with torch.no_grad():
-        output_emb = pt_model(emb_sent)
-    last_hidden_state = output_emb.last_hidden_state
-    sentence_embedding = last_hidden_state.mean(dim=1).squeeze().numpy()
+        outputs = pt_model(**model_input)
+    # last_hidden_state = output_emb.last_hidden_state
+    embeddings = outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
+
+    final_embeddings = []
+    emb_index = 0
+    for i in range(len(orig_sents)):
+        if i in sentences_to_exclude_indices:
+            final_embeddings.append(np.zeros((args.emb_dim,)))
+        else:
+            final_embeddings.append(embeddings[emb_index])
+            emb_index += 1
     # final_output = output.pooler_output.detach().numpy()
-    return  sentence_embedding
+    return final_embeddings
 
 # Mean of document sentences to get list of document embeddings
 def get_document_embedding(all_documents):
     doc_embeds = []
-    for doc in all_documents:
+    for doc in tqdm(all_documents):
         doc_embedding = np.zeros(args.emb_dim)
         for sent in doc.sent_embeds:
             doc_embedding = np.add(doc_embedding, sent)
@@ -281,14 +296,14 @@ def get_document_embedding(all_documents):
 # Get maximum length of the sentences of the document
 def get_max_length(all_documents):
     max_l = 0
-    for doc in all_documents:
+    for doc in tqdm(all_documents):
         if max_l < len(doc.sent_embeds):
             max_l = len(doc.sent_embeds)
     return max_l
 
 # Make length of all documents same
 def pad_documents(max_length):
-    for i in range(len(all_documents)):
+    for i in tqdm(range(len(all_documents))):
         req = max_length - len(all_documents[i].sent_embeds)
         if req > 0:
             added = np.zeros((req, args.emb_dim))
@@ -305,7 +320,7 @@ def doc_edge_index(doc_embeds, threshold):
     neg_edge_index_r = []
     neg_edge_index_c = []
 
-    for i in range(n):
+    for i in tqdm(range(n)):
         for j in range(i+1, n):
             try:
                 doc1 = doc_embeds[i]
@@ -401,31 +416,33 @@ elif args.train_dataset.lower().endswith('.csv'):
     data = pd.read_csv(args.train_dataset)
 all_documents = []
 
-data = data[:10]
+# data = data[: 10]
 
-for i in data.index:
+print("Pre-processing documents")
+for i in tqdm(data.index):
     doc = Document(i)
     doc_sentences = pre_process_sentences(data['text'][i])
     setattr(doc, "raw_sentences", doc_sentences)
 
-    doc_sent_embeds = []
-    for sent in doc_sentences:
-        temp = pretrained_sentence_embedding(sent, pretrained_model, pretrained_tokenizer)
-        doc_sent_embeds.append(temp)
+    doc_sent_embeds = pretrained_sentence_embedding(doc_sentences, pretrained_model, pretrained_tokenizer)
     setattr(doc, "sent_embeds", doc_sent_embeds)
     if (len(doc_sent_embeds)!=len(doc_sentences)):
         print("sentence improper = ", doc_sentences)
         raise ValueError
     all_documents.append(doc)
 
+print("Getting document embeddings")
 doc_embeds = get_document_embedding(all_documents)
 
+
 # Padding of documents
+print("Getting max length")
 max_num_of_sent = get_max_length(all_documents)
 print("Padding all the documents to a length of: ", max_num_of_sent)
 pad_documents(max_num_of_sent)
 
 # Getting graph
+print("Getting document graph")
 doc_embeds_pos_edge_indexes, doc_embeds_neg_edge_indexes = doc_edge_index(doc_embeds, args.doc_threshold)
 
 # Training document GAE
@@ -465,7 +482,8 @@ final_doc_embeds = doc_gae_model.encode(torch.FloatTensor(doc_embeds), doc_embed
 # Sentence encoding
 
 # Sentence graph
-for i, doc in enumerate(all_documents):
+print("Creating sentence graphs for documents")
+for i, doc in tqdm(enumerate(all_documents)):
     pos_edge_indexes, neg_edge_indexes = sent_edge_index(doc, args.sent_threshold)
     setattr(doc, "pos_edge_indexes", pos_edge_indexes)
     setattr(doc, "neg_edge_indexes", neg_edge_indexes)
@@ -492,7 +510,7 @@ for e in range(args.sent_epochs):
     train_loss = 0.0
     final_model.train()
 
-    for i in range(len(x_train)):
+    for i in tqdm(range(len(x_train))):
         try:
             sent_optimizer.zero_grad()
             sent_emb = torch.FloatTensor(x_train[i].sent_embeds)

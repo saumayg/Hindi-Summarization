@@ -23,7 +23,7 @@ import pandas as pd
 import transformers
 from tqdm import tqdm
 from sklearn.model_selection import KFold
-from datasets import load_dataset, load_metric
+from datasets import load_dataset, Dataset
 from filelock import FileLock
 from transformers import (
     AutoConfig,
@@ -214,6 +214,10 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "The name of the column in the datasets containing the ner string (for summarization)."},
     )
+    use_lineterminator: Optional[str] = field(
+        default=False,
+        metadata={"help": "Use custom lineterminator to load csv"}
+    )
 
     def __post_init__(self):
         if (
@@ -294,20 +298,29 @@ def main():
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
     data_files = {}
-    if data_args.train_file is not None:
-        data_files["train"] = data_args.train_file
-        extension = data_args.train_file.split(".")[-1]
-    if data_args.validation_file is not None:
-        data_files["validation"] = data_args.validation_file
-        extension = data_args.validation_file.split(".")[-1]
-    if data_args.test_file is not None:
-        data_files["test"] = data_args.test_file
-        extension = data_args.test_file.split(".")[-1]
-    raw_datasets = load_dataset(
-        extension,
-        data_files=data_files,
-        cache_dir=model_args.cache_dir,
-    )
+    if data_args.use_lineterminator == False:
+        if data_args.train_file is not None:
+            data_files["train"] = data_args.train_file
+            extension = data_args.train_file.split(".")[-1]
+        if data_args.validation_file is not None:
+            data_files["validation"] = data_args.validation_file
+            extension = data_args.validation_file.split(".")[-1]
+        if data_args.test_file is not None:
+            data_files["test"] = data_args.test_file
+            extension = data_args.test_file.split(".")[-1]
+        raw_datasets = load_dataset(
+            extension,
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+        )
+    else:
+        if data_args.train_file is not None:
+            data_files["train"] = Dataset.from_pandas(pd.read_csv(data_args.train_file, lineterminator='\n'))
+        if data_args.validation_file is not None:
+            data_files["validation"] = Dataset.from_pandas(pd.read_csv(data_args.validation_file, lineterminator='\n'))
+        if data_args.test_file is not None:
+            data_files["test"] = Dataset.from_pandas(pd.read_csv(data_args.test_file, lineterminator='\n'))
+        raw_datasets = data_files
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
