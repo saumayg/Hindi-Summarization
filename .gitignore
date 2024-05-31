@@ -5,3 +5,8 @@ fastText
 multilingual_rouge_scoring
 0-Appending/scripts/model
 .ipynb_checkpoints
+2-Multi-training/scripts/model
+__pycache__
+model
+cache
+plots
