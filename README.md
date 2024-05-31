@@ -1,1 +1,1 @@
-Repository for all the ideas for NEA-ATS
+Repository for all the ideas for Hindi Summarization Research
